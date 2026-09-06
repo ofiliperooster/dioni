@@ -6,7 +6,7 @@ type SupabaseUser = {
 };
 
 export function getSupabaseConfig() {
-  const url = process.env.SUPABASE_URL?.replace(/\/+$/, '');
+  const url = (process.env.SUPABASE_INTERNAL_URL || process.env.SUPABASE_URL)?.replace(/\/+$/, '');
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
   if (!url || !serviceKey) throw new Error('Conexão com o Supabase ainda não configurada.');
   return { url, serviceKey };

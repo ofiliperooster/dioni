@@ -5,6 +5,7 @@ services:
     image: ghcr.io/ofiliperooster/dioni:latest
     environment:
       SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_INTERNAL_URL: ${SUPABASE_INTERNAL_URL:-http://gr-supabase_api-gw:8000}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
