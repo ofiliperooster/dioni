@@ -12,8 +12,17 @@ if [ -z "$SERVICE_KEY" ]; then
   exit 1
 fi
 
+if [ -z "${INITIAL_ADMIN_EMAIL:-}" ] || [ -z "${INITIAL_ADMIN_PASSWORD:-}" ]; then
+  echo "INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD are required" >&2
+  exit 1
+fi
+
 umask 077
-printf 'SUPABASE_URL=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' "$SUPABASE_URL" "$SERVICE_KEY" > .dev.vars
+printf 'SUPABASE_URL=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\nINITIAL_ADMIN_EMAIL=%s\nINITIAL_ADMIN_PASSWORD=%s\n' \
+  "$SUPABASE_URL" \
+  "$SERVICE_KEY" \
+  "$INITIAL_ADMIN_EMAIL" \
+  "$INITIAL_ADMIN_PASSWORD" > .dev.vars
 
 exec ./node_modules/.bin/wrangler dev \
   --ip 0.0.0.0 \
