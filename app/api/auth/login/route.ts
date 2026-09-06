@@ -10,14 +10,19 @@ async function ensureInitialAdmin(email: string, password: string) {
   const initialEmail = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
   const initialPassword = process.env.INITIAL_ADMIN_PASSWORD;
   if (!initialEmail || !initialPassword || email !== initialEmail || password !== initialPassword) return;
-  try {
+  const listResponse = await supabaseRequest('/auth/v1/admin/users?page=1&per_page=1000');
+  const list = await listResponse.json() as { users?: Array<{ id: string; email?: string }> } | Array<{ id: string; email?: string }>;
+  const users = Array.isArray(list) ? list : list.users || [];
+  const existing = users.find((user) => user.email?.toLowerCase() === email);
+  const body = JSON.stringify({ email, password, email_confirm: true, app_metadata: { role: 'admin' } });
+
+  if (existing) {
+    await supabaseRequest(`/auth/v1/admin/users/${existing.id}`, { method: 'PUT', body });
+  } else {
     await supabaseRequest('/auth/v1/admin/users', {
       method: 'POST',
-      body: JSON.stringify({ email, password, email_confirm: true, app_metadata: { role: 'admin' } }),
+      body,
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message.toLowerCase() : '';
-    if (!message.includes('already') && !message.includes('registered') && !message.includes('exists')) throw error;
   }
 }
 
@@ -41,8 +46,8 @@ export async function POST(request: Request) {
     headers.append('Set-Cookie', `dioni_access_token=${session.access_token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${session.expires_in || 3600}${secure ? '; Secure' : ''}`);
     return new Response(JSON.stringify({ user: { id: session.user.id, email: session.user.email || email, role: session.user.app_metadata?.role || 'user' } }), { status: 200, headers });
   } catch (error) {
-    const response = apiError(error);
-    if (response.status === 400) return Response.json({ error: 'E-mail ou senha incorretos.' }, { status: 401 });
-    return response;
+    const message = error instanceof Error ? error.message.toLowerCase() : '';
+    if (message.includes('invalid login') || message.includes('invalid credentials')) return Response.json({ error: 'E-mail ou senha incorretos.' }, { status: 401 });
+    return apiError(error);
   }
 }
