@@ -19,7 +19,7 @@ export async function supabaseRequest(path: string, init: RequestInit = {}, auth
   const headers = new Headers(init.headers);
   headers.set('apikey', serviceKey);
   headers.set('Authorization', authorization || `Bearer ${serviceKey}`);
-  headers.set('Content-Type', 'application/json');
+  if (!headers.has('Content-Type') && init.body) headers.set('Content-Type', 'application/json');
   const response = await fetch(`${url}${path}`, { ...init, headers });
   if (!response.ok) {
     const details = await response.json().catch(() => ({})) as { message?: string; msg?: string; error_description?: string; details?: string };

@@ -57,6 +57,27 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PUT(request: Request) {
+  try {
+    await requireUser(request);
+    const input = await request.json() as { id?: unknown; status?: unknown };
+    const id = typeof input.id === 'string' ? input.id : '';
+    const status = typeof input.status === 'string' ? input.status as ClientStatus : '' as ClientStatus;
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Cadastro inválido.');
+    if (!statuses.has(status)) throw new Error('Selecione um status válido.');
+    const response = await supabaseRequest(`/rest/v1/dioni_clientes?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ status, updated_at: new Date().toISOString() }),
+    });
+    const rows = await response.json() as ClientRow[];
+    if (!rows[0]) throw new Error('Cliente não encontrado.');
+    return Response.json({ client: serialize(rows[0]) });
+  } catch (error) {
+    return apiError(error);
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     await requireUser(request);

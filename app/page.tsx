@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { BadgeCheck, CalendarDays, KeyRound, LayoutDashboard, LoaderCircle, LogOut, Menu, ReceiptText, ShieldCheck, Trash2, UserPlus, UsersRound } from 'lucide-react';
+import { CalendarDays, Download, Eye, FileText, KeyRound, LayoutDashboard, LoaderCircle, LogOut, Menu, Paperclip, ReceiptText, Search, ShieldCheck, Trash2, UserPlus, UsersRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Toaster, toast } from '@/components/ui/toast';
 
@@ -15,6 +16,7 @@ type Client = { id: string; name: string; document: string; birthDate: string; a
 type ClientInput = Omit<Client, 'id'>;
 type SessionUser = { id: string; email: string; role: string };
 type AppUser = SessionUser & { createdAt: string };
+type ClientDocument = { id: string; clientId: string; name: string; mimeType: string; size: number; createdAt: string };
 
 const initialForm: ClientInput = { name: '', document: '', birthDate: '', address: '', dueDay: '', status: 'Pagando' };
 
@@ -25,10 +27,22 @@ function formatDocument(value: string) {
 }
 
 async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
-  const response = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const options: RequestInit = { method };
+  if (body !== undefined) {
+    options.headers = { 'Content-Type': 'application/json' };
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(path, options);
   const data = await response.json().catch(() => ({})) as { error?: string } & T;
   if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a operação.');
   return data;
+}
+
+async function upload(path: string, body: FormData) {
+  const response = await fetch(path, { method: 'POST', body });
+  const data = await response.json().catch(() => ({})) as { error?: string; document?: ClientDocument };
+  if (!response.ok) throw new Error(data.error || 'Não foi possível enviar o documento.');
+  return data.document as ClientDocument;
 }
 
 const navItems: Array<{ id: View; label: string; icon: typeof UserPlus; adminOnly?: boolean }> = [
@@ -54,7 +68,23 @@ export default function Home() {
   const [deleteUserTarget, setDeleteUserTarget] = useState<AppUser | null>(null);
   const [userForm, setUserForm] = useState({ email: '', password: '' });
   const [usersLoading, setUsersLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dueDayFilter, setDueDayFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<Record<string, ClientDocument[]>>({});
+  const [documentsLoading, setDocumentsLoading] = useState<string | null>(null);
+  const [previewDocument, setPreviewDocument] = useState<ClientDocument | null>(null);
   const title = useMemo(() => navItems.find((item) => item.id === view)?.label || 'Dioni', [view]);
+  const filteredClients = useMemo(() => {
+    const nameTerm = searchTerm.trim().toLocaleLowerCase('pt-BR');
+    const documentTerm = searchTerm.replace(/\D/g, '');
+    return clients.filter((client) => {
+      const documentDigits = client.document.replace(/\D/g, '');
+      const matchesTerm = !nameTerm || client.name.toLocaleLowerCase('pt-BR').includes(nameTerm) || Boolean(documentTerm && documentDigits.includes(documentTerm));
+      return matchesTerm && (dueDayFilter === 'all' || client.dueDay === dueDayFilter) && (statusFilter === 'all' || client.status === statusFilter);
+    });
+  }, [clients, dueDayFilter, searchTerm, statusFilter]);
 
   const loadClients = useCallback(async () => {
     setIsLoading(true);
@@ -132,6 +162,47 @@ export default function Home() {
     } finally { setIsSaving(false); }
   };
 
+  const updateClientStatus = async (client: Client, status: ClientStatus) => {
+    try {
+      const { client: updated } = await api<{ client: Client }>('/api/clientes', 'PUT', { id: client.id, status });
+      setClients((current) => current.map((item) => item.id === client.id ? { ...item, status: updated.status } : item));
+      toast.add({ title: 'Status atualizado', description: `${client.name} agora está como ${status}.`, type: 'success' });
+    } catch (error) {
+      toast.add({ title: 'Status não atualizado', description: error instanceof Error ? error.message : 'Tente novamente.', type: 'error' });
+    }
+  };
+
+  const loadDocuments = async (clientId: string) => {
+    setDocumentsLoading(clientId);
+    try {
+      const data = await api<{ documents: ClientDocument[] }>(`/api/documentos?clienteId=${encodeURIComponent(clientId)}`);
+      setDocuments((current) => ({ ...current, [clientId]: data.documents }));
+    } catch (error) {
+      toast.add({ title: 'Documentos indisponíveis', description: error instanceof Error ? error.message : 'Tente novamente.', type: 'error' });
+    } finally { setDocumentsLoading(null); }
+  };
+
+  const toggleDocuments = async (clientId: string) => {
+    if (expandedClientId === clientId) return setExpandedClientId(null);
+    setExpandedClientId(clientId);
+    if (!documents[clientId]) await loadDocuments(clientId);
+  };
+
+  const uploadDocument = async (clientId: string, file?: File) => {
+    if (!file) return;
+    setDocumentsLoading(clientId);
+    try {
+      const body = new FormData();
+      body.append('clienteId', clientId);
+      body.append('file', file);
+      const document = await upload('/api/documentos', body);
+      setDocuments((current) => ({ ...current, [clientId]: [document, ...(current[clientId] || [])] }));
+      toast.add({ title: 'Documento anexado', description: `${file.name} foi armazenado com sucesso.`, type: 'success' });
+    } catch (error) {
+      toast.add({ title: 'Documento não enviado', description: error instanceof Error ? error.message : 'Tente novamente.', type: 'error' });
+    } finally { setDocumentsLoading(null); }
+  };
+
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
     try { setUsers((await api<{ users: AppUser[] }>('/api/usuarios')).users); }
@@ -193,18 +264,38 @@ export default function Home() {
   if (!session) return <Toaster><main className="login-page"><form className="login-card" onSubmit={submitLogin}><img src="/dioni-logo.png" alt="Dioni Chácaras" /><div className="login-copy"><span>Acesso restrito</span><h1>Entre no sistema</h1><p>Use seu e-mail e sua senha para continuar.</p></div><label className="field"><span>E-mail</span><Input required type="email" autoComplete="username" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} placeholder="voce@empresa.com.br" /></label><label className="field"><span>Senha</span><Input required type="password" autoComplete="current-password" value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} placeholder="Sua senha" /></label>{loginError && <p className="login-error">{loginError}</p>}<Button type="submit" className="primary-action login-button" disabled={isSaving}><KeyRound /> {isSaving ? 'Entrando...' : 'Entrar'}</Button></form></main></Toaster>;
 
   const visibleNav = navItems.filter((item) => !item.adminOnly || session.role === 'admin');
+  const previewUrl = previewDocument ? `/api/documentos?id=${encodeURIComponent(previewDocument.id)}` : '';
 
   return <Toaster><SidebarProvider defaultOpen><Sidebar collapsible="offcanvas" className="border-r-0"><SidebarHeader className="brand-area"><img src="/dioni-logo.png" alt="Dioni Chácaras" /></SidebarHeader><SidebarContent className="px-3"><SidebarGroup><SidebarGroupContent><SidebarMenu>{visibleNav.map((item) => { const Icon = item.icon; return <SidebarMenuItem key={item.id}><SidebarMenuButton isActive={view === item.id} onClick={() => setView(item.id)}><Icon /><span>{item.label}</span></SidebarMenuButton></SidebarMenuItem>; })}</SidebarMenu></SidebarGroupContent></SidebarGroup></SidebarContent><SidebarFooter className="sidebar-foot"><div className="account-pill"><div><small>Conectado como</small><strong>{session.email}</strong></div><Button variant="ghost" size="icon-sm" onClick={logout} aria-label="Sair"><LogOut /></Button></div><div className="connection-pill"><span className="connection-offline" /><div><strong>Status da API do Bradesco</strong><small>Aguardando integração</small></div></div></SidebarFooter></Sidebar>
 
     <SidebarInset className="app-surface"><header className="topbar"><div className="topbar-title"><SidebarTrigger className="mobile-trigger" aria-label="Abrir menu"><Menu /></SidebarTrigger><div><span>Gestão de recebíveis</span><h1>{title}</h1></div></div><div className="today-chip"><CalendarDays /><span>{new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long' }).format(new Date())}</span></div></header>
 
       {view === 'cadastro' && <main className="page-content"><section className="intro-row"><div><p className="eyebrow">Novo cadastro</p><h2>Informações do cliente</h2><p>Preencha os dados para incluir um cliente na carteira.</p></div><span className="required-note">* Campos obrigatórios</span></section><form className="registration-card" onSubmit={submit}><div className="form-grid"><label className="field field-wide"><span>Nome completo *</span><Input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Digite o nome do cliente" /></label><label className="field"><span>CPF ou CNPJ *</span><Input required minLength={14} value={form.document} onChange={(event) => setForm({ ...form, document: formatDocument(event.target.value) })} placeholder="000.000.000-00" inputMode="numeric" /></label><label className="field"><span>Data de nascimento *</span><Input required type="date" value={form.birthDate} onChange={(event) => setForm({ ...form, birthDate: event.target.value })} /></label><label className="field field-wide"><span>Endereço completo *</span><Input required value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} placeholder="Rua, número, bairro, cidade e estado" /></label><label className="field"><span>Dia do vencimento *</span><Select required value={form.dueDay} onValueChange={(value) => setForm({ ...form, dueDay: value || '' })}><SelectTrigger className="select-field"><SelectValue placeholder="Selecione o dia" /></SelectTrigger><SelectContent>{Array.from({ length: 31 }, (_, index) => String(index + 1)).map((day) => <SelectItem key={day} value={day}>Dia {day}</SelectItem>)}</SelectContent></Select></label><label className="field"><span>Status do cliente *</span><Select value={form.status} onValueChange={(value) => setForm({ ...form, status: (value || 'Pagando') as ClientStatus })}><SelectTrigger className="select-field"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Pagando">Pagando</SelectItem><SelectItem value="Quitado">Quitado</SelectItem><SelectItem value="Cancelado">Cancelado</SelectItem></SelectContent></Select></label></div><div className="form-actions"><Button type="button" variant="outline" onClick={() => setForm(initialForm)} disabled={isSaving}>Limpar campos</Button><Button type="submit" className="primary-action" disabled={isSaving}>{isSaving ? <LoaderCircle className="spin" /> : <UserPlus />} {isSaving ? 'Salvando...' : 'Cadastrar cliente'}</Button></div></form>
-        <section className="session-list"><div className="section-heading"><div><h2>Clientes cadastrados</h2><p>Registros armazenados na base exclusiva da Dioni.</p></div><span>{clients.length} {clients.length === 1 ? 'cliente' : 'clientes'}</span></div>{isLoading ? <div className="empty-list"><LoaderCircle className="spin" /><strong>Carregando cadastros</strong></div> : clients.length === 0 ? <div className="empty-list"><UsersRound /><strong>Nenhum cliente cadastrado</strong><p>{connectionError || 'Os clientes adicionados aparecerão aqui.'}</p></div> : <div className="client-list">{clients.map((client) => <article className="client-row" key={client.id}><div className="client-avatar">{client.name.slice(0, 1).toUpperCase()}</div><div className="client-main"><strong>{client.name}</strong><span>{client.document} · vencimento dia {client.dueDay}</span></div><span className={`status-badge status-${client.status.toLowerCase()}`}><BadgeCheck /> {client.status}</span><Button type="button" variant="ghost" size="icon-sm" className="delete-button" onClick={() => setDeleteTarget(client)} aria-label={`Excluir ${client.name}`}><Trash2 /></Button></article>)}</div>}</section></main>}
+        <section className="session-list">
+          <div className="section-heading"><div><h2>Clientes cadastrados</h2></div><span>{clients.length} {clients.length === 1 ? 'cliente' : 'clientes'}</span></div>
+          <div className="client-filters">
+            <label className="filter-search"><Search /><Input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Pesquisar por nome ou CPF/CNPJ" aria-label="Pesquisar clientes" /></label>
+            <Select value={dueDayFilter} onValueChange={(value) => setDueDayFilter(value || 'all')}><SelectTrigger className="filter-select"><SelectValue placeholder="Vencimento" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os vencimentos</SelectItem>{Array.from({ length: 31 }, (_, index) => String(index + 1)).map((day) => <SelectItem key={day} value={day}>Vencimento dia {day}</SelectItem>)}</SelectContent></Select>
+            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value || 'all')}><SelectTrigger className="filter-select"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os status</SelectItem><SelectItem value="Pagando">Pagando</SelectItem><SelectItem value="Quitado">Quitado</SelectItem><SelectItem value="Cancelado">Cancelado</SelectItem></SelectContent></Select>
+          </div>
+          {isLoading ? <div className="empty-list"><LoaderCircle className="spin" /><strong>Carregando cadastros</strong></div> : clients.length === 0 ? <div className="empty-list"><UsersRound /><strong>Nenhum cliente cadastrado</strong><p>{connectionError || 'Os clientes adicionados aparecerão aqui.'}</p></div> : filteredClients.length === 0 ? <div className="empty-list"><Search /><strong>Nenhum resultado encontrado</strong><p>Altere os filtros para encontrar outros clientes.</p></div> : <div className="client-list">{filteredClients.map((client) => <div className="client-item" key={client.id}>
+            <article className="client-row"><div className="client-avatar">{client.name.slice(0, 1).toUpperCase()}</div><div className="client-main"><strong>{client.name}</strong><span>{client.document} · vencimento dia {client.dueDay}</span></div>
+              <Select value={client.status} onValueChange={(value) => void updateClientStatus(client, (value || client.status) as ClientStatus)}><SelectTrigger className={`status-select status-${client.status.toLowerCase()}`} aria-label={`Status de ${client.name}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Pagando">Pagando</SelectItem><SelectItem value="Quitado">Quitado</SelectItem><SelectItem value="Cancelado">Cancelado</SelectItem></SelectContent></Select>
+              <Button type="button" variant="outline" className="documents-button" onClick={() => void toggleDocuments(client.id)}><Paperclip /> Documentos</Button>
+              <Button type="button" variant="ghost" size="icon-sm" className="delete-button" onClick={() => setDeleteTarget(client)} aria-label={`Excluir ${client.name}`}><Trash2 /></Button>
+            </article>
+            {expandedClientId === client.id && <div className="documents-panel"><div className="documents-toolbar"><div><strong>Documentos do cliente</strong><span>PDF, imagens, DOC ou DOCX · máximo 15 MB</span></div><label className="upload-button"><Paperclip /> {documentsLoading === client.id ? 'Enviando...' : 'Anexar documento'}<input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" disabled={documentsLoading === client.id} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; void uploadDocument(client.id, file); }} /></label></div>
+              {documentsLoading === client.id && !documents[client.id] ? <div className="documents-empty"><LoaderCircle className="spin" /> Carregando documentos</div> : (documents[client.id] || []).length === 0 ? <div className="documents-empty"><FileText /> Nenhum documento anexado</div> : <div className="documents-list">{documents[client.id].map((document) => <div className="document-row" key={document.id}><FileText /><div><strong>{document.name}</strong><span>{(document.size / 1024 / 1024).toFixed(2)} MB</span></div><Button type="button" variant="ghost" size="sm" onClick={() => setPreviewDocument(document)}><Eye /> Visualizar</Button><a className="document-action" href={`/api/documentos?id=${encodeURIComponent(document.id)}&download=1`}><Download /> Baixar</a></div>)}</div>}
+            </div>}
+          </div>)}</div>}
+        </section></main>}
 
       {(view === 'clientes' || view === 'dashboard') && <main className="placeholder-page"><div className="placeholder-icon">{view === 'clientes' ? <ReceiptText /> : <LayoutDashboard />}</div><h2>{view === 'clientes' ? 'Clientes e parcelas' : 'Dashboard financeiro'}</h2></main>}
 
       {view === 'usuarios' && session.role === 'admin' && <main className="page-content users-page"><section className="intro-row"><div><p className="eyebrow">Controle de acesso</p><h2>Criar novo usuário</h2><p>O acesso será liberado imediatamente, sem confirmação por e-mail.</p></div></section><form className="registration-card user-form" onSubmit={createUser}><div className="form-grid"><label className="field"><span>E-mail *</span><Input required type="email" value={userForm.email} onChange={(event) => setUserForm({ ...userForm, email: event.target.value })} placeholder="usuario@empresa.com.br" /></label><label className="field"><span>Senha *</span><Input required minLength={6} type="password" value={userForm.password} onChange={(event) => setUserForm({ ...userForm, password: event.target.value })} placeholder="Mínimo de 6 caracteres" /></label></div><div className="form-actions"><Button type="submit" className="primary-action" disabled={isSaving}><UserPlus /> {isSaving ? 'Criando...' : 'Criar acesso'}</Button></div></form><section className="session-list"><div className="section-heading"><div><h2>Usuários cadastrados</h2><p>Acessos ativos no sistema Dioni.</p></div><span>{users.length} usuários</span></div>{usersLoading ? <div className="empty-list"><LoaderCircle className="spin" /><strong>Carregando usuários</strong></div> : <div className="user-list">{users.map((user) => <article className="user-row" key={user.id}><div className="user-icon"><ShieldCheck /></div><div className="user-main"><strong>{user.email}</strong><span>{user.role === 'admin' ? 'Administrador' : 'Usuário'}</span></div>{user.id !== session.id && <Button type="button" variant="ghost" size="icon-sm" className="delete-button user-delete-button" onClick={() => setDeleteUserTarget(user)} aria-label={`Excluir ${user.email}`}><Trash2 /></Button>}</article>)}</div>}</section></main>}
     </SidebarInset>
+
+    <Dialog open={Boolean(previewDocument)} onOpenChange={(open) => !open && setPreviewDocument(null)}><DialogContent className="document-preview-dialog"><DialogHeader><DialogTitle>{previewDocument?.name}</DialogTitle><DialogDescription>Visualização do documento anexado ao cliente.</DialogDescription></DialogHeader>{previewDocument && (previewDocument.mimeType === 'application/pdf' || previewDocument.mimeType.startsWith('image/')) ? <iframe className="document-preview-frame" src={previewUrl} title={`Visualização de ${previewDocument.name}`} /> : <div className="document-no-preview"><FileText /><p>Este formato não possui visualização no navegador.</p>{previewDocument && <a className="document-action document-download" href={`${previewUrl}&download=1`}><Download /> Baixar documento</a>}</div>}</DialogContent></Dialog>
 
     <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir cliente?</AlertDialogTitle><AlertDialogDescription>O cadastro de {deleteTarget?.name} será removido permanentemente. Esta ação não poderá ser desfeita.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={isSaving}>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={removeClient} disabled={isSaving}><Trash2 /> {isSaving ? 'Excluindo...' : 'Excluir cliente'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     <AlertDialog open={Boolean(deleteUserTarget)} onOpenChange={(open) => !open && setDeleteUserTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir usuário?</AlertDialogTitle><AlertDialogDescription>O acesso de {deleteUserTarget?.email} será removido permanentemente do sistema Dioni.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={isSaving}>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={removeUser} disabled={isSaving}><Trash2 /> {isSaving ? 'Excluindo...' : 'Excluir usuário'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>

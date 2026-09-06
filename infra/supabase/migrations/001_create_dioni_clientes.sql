@@ -15,5 +15,10 @@ create index if not exists dioni_clientes_dia_vencimento_idx on public.dioni_cli
 
 alter table public.dioni_clientes enable row level security;
 
+grant usage on schema public to anon, authenticated, service_role;
+grant select, insert, update, delete on table public.dioni_clientes to anon, authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
 comment on table public.dioni_clientes is 'Cadastros de clientes da aplicação Dioni';
 comment on column public.dioni_clientes.documento is 'CPF ou CNPJ armazenado somente com números';
