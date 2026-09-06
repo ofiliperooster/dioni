@@ -45,6 +45,8 @@
 .sidebar-foot { padding: 1rem 1.1rem 1.25rem; }
 .connection-pill { display: flex; align-items: flex-start; gap: .65rem; padding: .8rem; border: 1px solid #24304a; border-radius: .75rem; background: #11192c; }
 .connection-pill > span { width: .55rem; height: .55rem; margin-top: .3rem; border-radius: 99px; background: #f1b84b; box-shadow: 0 0 0 .25rem rgb(241 184 75 / 10%); }
+.connection-pill > span:not(.connection-offline) { background: #26c281; box-shadow: 0 0 0 .25rem rgb(38 194 129 / 10%); }
+.connection-pill > span.connection-offline { background: #f1b84b; }
 .connection-pill div { display: grid; gap: .15rem; }
 .connection-pill strong { color: #fff; font-size: .78rem; }
 .connection-pill small { color: #8994ad; font-size: .72rem; line-height: 1.35; }
@@ -93,6 +95,8 @@
 .status-quitado { color: #1736b8; background: #e8edff; }
 .status-cancelado { color: #9f2635; background: #fdecef; }
 .delete-button { color: #a62b3b; }
+.spin { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .placeholder-page { align-content: center; min-height: calc(100vh - 5.6rem); padding: 2rem; }
 .placeholder-icon { display: grid; place-items: center; width: 4rem; height: 4rem; margin-bottom: 1rem; border-radius: 1.1rem; color: #123bff; background: #e8edff; }
 .placeholder-icon svg { width: 1.8rem; height: 1.8rem; }
