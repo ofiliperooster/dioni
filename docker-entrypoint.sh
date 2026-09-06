@@ -22,7 +22,7 @@ printf 'SUPABASE_URL=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\nINITIAL_ADMIN_EMAIL=%s\nI
   "$SUPABASE_URL" \
   "$SERVICE_KEY" \
   "$INITIAL_ADMIN_EMAIL" \
-  "$INITIAL_ADMIN_PASSWORD" > .dev.vars
+  "$INITIAL_ADMIN_PASSWORD" > dist/server/.dev.vars
 
 exec ./node_modules/.bin/wrangler dev \
   --ip 0.0.0.0 \
