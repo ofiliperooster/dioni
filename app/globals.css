@@ -117,7 +117,8 @@
 .user-row:last-child { border-bottom: 0; }
 .user-icon { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: .7rem; color: #123bff; background: #edf1ff; }
 .user-icon svg { width: 1.15rem; }
-.user-row > div:last-child { display: grid; gap: .15rem; }
+.user-main { display: grid; flex: 1; gap: .15rem; min-width: 0; }
+.user-delete-button { margin-left: auto; }
 .user-row strong { font-size: .88rem; }
 .user-row span { color: #7a8396; font-size: .76rem; }
 .placeholder-page { align-content: center; min-height: calc(100vh - 5.6rem); padding: 2rem; }

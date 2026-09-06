@@ -51,6 +51,7 @@ export default function Home() {
   const [isSaving, setIsSaving] = useState(false);
   const [connectionError, setConnectionError] = useState('');
   const [users, setUsers] = useState<AppUser[]>([]);
+  const [deleteUserTarget, setDeleteUserTarget] = useState<AppUser | null>(null);
   const [userForm, setUserForm] = useState({ email: '', password: '' });
   const [usersLoading, setUsersLoading] = useState(false);
   const title = useMemo(() => navItems.find((item) => item.id === view)?.label || 'Dioni', [view]);
@@ -153,6 +154,20 @@ export default function Home() {
     } finally { setIsSaving(false); }
   };
 
+  const removeUser = async () => {
+    if (!deleteUserTarget) return;
+    const target = deleteUserTarget;
+    setIsSaving(true);
+    try {
+      await api('/api/usuarios', 'DELETE', { id: target.id });
+      setUsers((current) => current.filter((user) => user.id !== target.id));
+      setDeleteUserTarget(null);
+      toast.add({ title: 'Usuário excluído', description: `O acesso de ${target.email} foi removido.`, type: 'success' });
+    } catch (error) {
+      toast.add({ title: 'Não foi possível excluir', description: error instanceof Error ? error.message : 'Tente novamente.', type: 'error' });
+    } finally { setIsSaving(false); }
+  };
+
   useEffect(() => {
     type ModelContext = { registerTool: (tool: unknown, options?: { signal?: AbortSignal }) => void | Promise<void> };
     const context = (document as unknown as { modelContext?: ModelContext }).modelContext;
@@ -188,9 +203,10 @@ export default function Home() {
 
       {(view === 'clientes' || view === 'dashboard') && <main className="placeholder-page"><div className="placeholder-icon">{view === 'clientes' ? <ReceiptText /> : <LayoutDashboard />}</div><h2>{view === 'clientes' ? 'Clientes e parcelas' : 'Dashboard financeiro'}</h2></main>}
 
-      {view === 'usuarios' && session.role === 'admin' && <main className="page-content users-page"><section className="intro-row"><div><p className="eyebrow">Controle de acesso</p><h2>Criar novo usuário</h2><p>O acesso será liberado imediatamente, sem confirmação por e-mail.</p></div></section><form className="registration-card user-form" onSubmit={createUser}><div className="form-grid"><label className="field"><span>E-mail *</span><Input required type="email" value={userForm.email} onChange={(event) => setUserForm({ ...userForm, email: event.target.value })} placeholder="usuario@empresa.com.br" /></label><label className="field"><span>Senha *</span><Input required minLength={6} type="password" value={userForm.password} onChange={(event) => setUserForm({ ...userForm, password: event.target.value })} placeholder="Mínimo de 6 caracteres" /></label></div><div className="form-actions"><Button type="submit" className="primary-action" disabled={isSaving}><UserPlus /> {isSaving ? 'Criando...' : 'Criar acesso'}</Button></div></form><section className="session-list"><div className="section-heading"><div><h2>Usuários cadastrados</h2><p>Acessos ativos no sistema Dioni.</p></div><span>{users.length} usuários</span></div>{usersLoading ? <div className="empty-list"><LoaderCircle className="spin" /><strong>Carregando usuários</strong></div> : <div className="user-list">{users.map((user) => <article className="user-row" key={user.id}><div className="user-icon"><ShieldCheck /></div><div><strong>{user.email}</strong><span>{user.role === 'admin' ? 'Administrador' : 'Usuário'}</span></div></article>)}</div>}</section></main>}
+      {view === 'usuarios' && session.role === 'admin' && <main className="page-content users-page"><section className="intro-row"><div><p className="eyebrow">Controle de acesso</p><h2>Criar novo usuário</h2><p>O acesso será liberado imediatamente, sem confirmação por e-mail.</p></div></section><form className="registration-card user-form" onSubmit={createUser}><div className="form-grid"><label className="field"><span>E-mail *</span><Input required type="email" value={userForm.email} onChange={(event) => setUserForm({ ...userForm, email: event.target.value })} placeholder="usuario@empresa.com.br" /></label><label className="field"><span>Senha *</span><Input required minLength={6} type="password" value={userForm.password} onChange={(event) => setUserForm({ ...userForm, password: event.target.value })} placeholder="Mínimo de 6 caracteres" /></label></div><div className="form-actions"><Button type="submit" className="primary-action" disabled={isSaving}><UserPlus /> {isSaving ? 'Criando...' : 'Criar acesso'}</Button></div></form><section className="session-list"><div className="section-heading"><div><h2>Usuários cadastrados</h2><p>Acessos ativos no sistema Dioni.</p></div><span>{users.length} usuários</span></div>{usersLoading ? <div className="empty-list"><LoaderCircle className="spin" /><strong>Carregando usuários</strong></div> : <div className="user-list">{users.map((user) => <article className="user-row" key={user.id}><div className="user-icon"><ShieldCheck /></div><div className="user-main"><strong>{user.email}</strong><span>{user.role === 'admin' ? 'Administrador' : 'Usuário'}</span></div>{user.id !== session.id && <Button type="button" variant="ghost" size="icon-sm" className="delete-button user-delete-button" onClick={() => setDeleteUserTarget(user)} aria-label={`Excluir ${user.email}`}><Trash2 /></Button>}</article>)}</div>}</section></main>}
     </SidebarInset>
 
     <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir cliente?</AlertDialogTitle><AlertDialogDescription>O cadastro de {deleteTarget?.name} será removido permanentemente. Esta ação não poderá ser desfeita.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={isSaving}>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={removeClient} disabled={isSaving}><Trash2 /> {isSaving ? 'Excluindo...' : 'Excluir cliente'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+    <AlertDialog open={Boolean(deleteUserTarget)} onOpenChange={(open) => !open && setDeleteUserTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir usuário?</AlertDialogTitle><AlertDialogDescription>O acesso de {deleteUserTarget?.email} será removido permanentemente do sistema Dioni.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={isSaving}>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={removeUser} disabled={isSaving}><Trash2 /> {isSaving ? 'Excluindo...' : 'Excluir usuário'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </SidebarProvider></Toaster>;
 }

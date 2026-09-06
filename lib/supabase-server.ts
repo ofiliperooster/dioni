@@ -1,9 +1,11 @@
 type SupabaseUser = {
   id: string;
   email?: string;
-  app_metadata?: { role?: string };
+  app_metadata?: { role?: string; app_id?: string };
   created_at?: string;
 };
+
+export const DIONI_APP_ID = 'dioni';
 
 export function getSupabaseConfig() {
   const url = (process.env.SUPABASE_INTERNAL_URL || process.env.SUPABASE_URL)?.replace(/\/+$/, '');
@@ -35,7 +37,9 @@ export async function requireUser(request: Request) {
   const token = readCookie(request, 'dioni_access_token');
   if (!token) throw new Error('Sessão expirada. Entre novamente.');
   const response = await supabaseRequest('/auth/v1/user', { method: 'GET' }, `Bearer ${token}`);
-  return await response.json() as SupabaseUser;
+  const user = await response.json() as SupabaseUser;
+  if (user.app_metadata?.app_id !== DIONI_APP_ID) throw new Error('Este usuário não pertence ao sistema Dioni.');
+  return user;
 }
 
 export async function requireAdmin(request: Request) {
@@ -46,7 +50,7 @@ export async function requireAdmin(request: Request) {
 
 export function apiError(error: unknown) {
   const message = error instanceof Error ? error.message : 'Erro inesperado.';
-  const unauthorized = message.includes('Sessão expirada') || message.includes('token') || message.includes('JWT');
+  const unauthorized = message.includes('Sessão expirada') || message.includes('não pertence') || message.includes('token') || message.includes('JWT');
   const forbidden = message.includes('Apenas administradores');
   const unavailable = message.includes('não configurada');
   return Response.json({ error: message }, { status: unauthorized ? 401 : forbidden ? 403 : unavailable ? 503 : 400 });

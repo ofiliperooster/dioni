@@ -1,9 +1,9 @@
-import { apiError, getSupabaseConfig, supabaseRequest } from '@/lib/supabase-server';
+import { apiError, DIONI_APP_ID, getSupabaseConfig, supabaseRequest } from '@/lib/supabase-server';
 
 type LoginResponse = {
   access_token: string;
   expires_in?: number;
-  user: { id: string; email?: string; app_metadata?: { role?: string } };
+  user: { id: string; email?: string; app_metadata?: { role?: string; app_id?: string } };
 };
 
 async function ensureInitialAdmin(email: string, password: string) {
@@ -14,7 +14,7 @@ async function ensureInitialAdmin(email: string, password: string) {
   const list = await listResponse.json() as { users?: Array<{ id: string; email?: string }> } | Array<{ id: string; email?: string }>;
   const users = Array.isArray(list) ? list : list.users || [];
   const existing = users.find((user) => user.email?.toLowerCase() === email);
-  const body = JSON.stringify({ email, password, email_confirm: true, app_metadata: { role: 'admin' } });
+  const body = JSON.stringify({ email, password, email_confirm: true, app_metadata: { role: 'admin', app_id: DIONI_APP_ID } });
 
   if (existing) {
     await supabaseRequest(`/auth/v1/admin/users/${existing.id}`, { method: 'PUT', body });
@@ -40,6 +40,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({ email, password }),
     }, `Bearer ${serviceKey}`);
     const session = await response.json() as LoginResponse;
+    if (session.user.app_metadata?.app_id !== DIONI_APP_ID) throw new Error('Este usuário não pertence ao sistema Dioni.');
     const forwardedProto = request.headers.get('x-forwarded-proto');
     const secure = forwardedProto === 'https' || new URL(request.url).protocol === 'https:';
     const headers = new Headers({ 'Content-Type': 'application/json' });
