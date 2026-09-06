@@ -12,11 +12,12 @@ import { Toaster, toast } from '@/components/ui/toast';
 
 type View = 'cadastro' | 'clientes' | 'dashboard' | 'usuarios';
 type ClientStatus = 'Pagando' | 'Quitado' | 'Cancelado';
+type DocumentType = 'CPF' | 'RG' | 'CNH' | 'Contrato' | 'Outros';
 type Client = { id: string; name: string; document: string; birthDate: string; address: string; dueDay: string; status: ClientStatus };
 type ClientInput = Omit<Client, 'id'>;
 type SessionUser = { id: string; email: string; role: string };
 type AppUser = SessionUser & { createdAt: string };
-type ClientDocument = { id: string; clientId: string; name: string; mimeType: string; size: number; createdAt: string };
+type ClientDocument = { id: string; clientId: string; name: string; documentType: DocumentType; mimeType: string; size: number; createdAt: string };
 
 const initialForm: ClientInput = { name: '', document: '', birthDate: '', address: '', dueDay: '', status: 'Pagando' };
 
@@ -69,11 +70,12 @@ export default function Home() {
   const [userForm, setUserForm] = useState({ email: '', password: '' });
   const [usersLoading, setUsersLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [dueDayFilter, setDueDayFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [dueDayFilter, setDueDayFilter] = useState('Todos');
+  const [statusFilter, setStatusFilter] = useState('Todos');
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
   const [documents, setDocuments] = useState<Record<string, ClientDocument[]>>({});
   const [documentsLoading, setDocumentsLoading] = useState<string | null>(null);
+  const [documentTypeByClient, setDocumentTypeByClient] = useState<Record<string, DocumentType>>({});
   const [previewDocument, setPreviewDocument] = useState<ClientDocument | null>(null);
   const title = useMemo(() => navItems.find((item) => item.id === view)?.label || 'Dioni', [view]);
   const filteredClients = useMemo(() => {
@@ -82,7 +84,7 @@ export default function Home() {
     return clients.filter((client) => {
       const documentDigits = client.document.replace(/\D/g, '');
       const matchesTerm = !nameTerm || client.name.toLocaleLowerCase('pt-BR').includes(nameTerm) || Boolean(documentTerm && documentDigits.includes(documentTerm));
-      return matchesTerm && (dueDayFilter === 'all' || client.dueDay === dueDayFilter) && (statusFilter === 'all' || client.status === statusFilter);
+      return matchesTerm && (dueDayFilter === 'Todos' || client.dueDay === dueDayFilter) && (statusFilter === 'Todos' || client.status === statusFilter);
     });
   }, [clients, dueDayFilter, searchTerm, statusFilter]);
 
@@ -194,6 +196,7 @@ export default function Home() {
     try {
       const body = new FormData();
       body.append('clienteId', clientId);
+      body.append('documentType', documentTypeByClient[clientId] || 'Outros');
       body.append('file', file);
       const document = await upload('/api/documentos', body);
       setDocuments((current) => ({ ...current, [clientId]: [document, ...(current[clientId] || [])] }));
@@ -275,8 +278,8 @@ export default function Home() {
           <div className="section-heading"><div><h2>Clientes cadastrados</h2></div><span>{clients.length} {clients.length === 1 ? 'cliente' : 'clientes'}</span></div>
           <div className="client-filters">
             <label className="filter-search"><Search /><Input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Pesquisar por nome ou CPF/CNPJ" aria-label="Pesquisar clientes" /></label>
-            <Select value={dueDayFilter} onValueChange={(value) => setDueDayFilter(value || 'all')}><SelectTrigger className="filter-select"><SelectValue placeholder="Vencimento" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os vencimentos</SelectItem>{Array.from({ length: 31 }, (_, index) => String(index + 1)).map((day) => <SelectItem key={day} value={day}>Vencimento dia {day}</SelectItem>)}</SelectContent></Select>
-            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value || 'all')}><SelectTrigger className="filter-select"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os status</SelectItem><SelectItem value="Pagando">Pagando</SelectItem><SelectItem value="Quitado">Quitado</SelectItem><SelectItem value="Cancelado">Cancelado</SelectItem></SelectContent></Select>
+            <Select value={dueDayFilter} onValueChange={(value) => setDueDayFilter(value || 'Todos')}><SelectTrigger className="filter-select"><SelectValue placeholder="Vencimento" /></SelectTrigger><SelectContent><SelectItem value="Todos">Todos os vencimentos</SelectItem>{Array.from({ length: 31 }, (_, index) => String(index + 1)).map((day) => <SelectItem key={day} value={day}>Vencimento dia {day}</SelectItem>)}</SelectContent></Select>
+            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value || 'Todos')}><SelectTrigger className="filter-select"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="Todos">Todos os status</SelectItem><SelectItem value="Pagando">Pagando</SelectItem><SelectItem value="Quitado">Quitado</SelectItem><SelectItem value="Cancelado">Cancelado</SelectItem></SelectContent></Select>
           </div>
           {isLoading ? <div className="empty-list"><LoaderCircle className="spin" /><strong>Carregando cadastros</strong></div> : clients.length === 0 ? <div className="empty-list"><UsersRound /><strong>Nenhum cliente cadastrado</strong><p>{connectionError || 'Os clientes adicionados aparecerão aqui.'}</p></div> : filteredClients.length === 0 ? <div className="empty-list"><Search /><strong>Nenhum resultado encontrado</strong><p>Altere os filtros para encontrar outros clientes.</p></div> : <div className="client-list">{filteredClients.map((client) => <div className="client-item" key={client.id}>
             <article className="client-row"><div className="client-avatar">{client.name.slice(0, 1).toUpperCase()}</div><div className="client-main"><strong>{client.name}</strong><span>{client.document} · vencimento dia {client.dueDay}</span></div>
@@ -284,8 +287,8 @@ export default function Home() {
               <Button type="button" variant="outline" className="documents-button" onClick={() => void toggleDocuments(client.id)}><Paperclip /> Documentos</Button>
               <Button type="button" variant="ghost" size="icon-sm" className="delete-button" onClick={() => setDeleteTarget(client)} aria-label={`Excluir ${client.name}`}><Trash2 /></Button>
             </article>
-            {expandedClientId === client.id && <div className="documents-panel"><div className="documents-toolbar"><div><strong>Documentos do cliente</strong><span>PDF, imagens, DOC ou DOCX · máximo 15 MB</span></div><label className="upload-button"><Paperclip /> {documentsLoading === client.id ? 'Enviando...' : 'Anexar documento'}<input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" disabled={documentsLoading === client.id} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; void uploadDocument(client.id, file); }} /></label></div>
-              {documentsLoading === client.id && !documents[client.id] ? <div className="documents-empty"><LoaderCircle className="spin" /> Carregando documentos</div> : (documents[client.id] || []).length === 0 ? <div className="documents-empty"><FileText /> Nenhum documento anexado</div> : <div className="documents-list">{documents[client.id].map((document) => <div className="document-row" key={document.id}><FileText /><div><strong>{document.name}</strong><span>{(document.size / 1024 / 1024).toFixed(2)} MB</span></div><Button type="button" variant="ghost" size="sm" onClick={() => setPreviewDocument(document)}><Eye /> Visualizar</Button><a className="document-action" href={`/api/documentos?id=${encodeURIComponent(document.id)}&download=1`}><Download /> Baixar</a></div>)}</div>}
+            {expandedClientId === client.id && <div className="documents-panel"><div className="documents-toolbar"><div><strong>Documentos do cliente</strong><span>PDF, imagens, DOC ou DOCX · máximo 15 MB</span></div><div className="document-upload-actions"><Select value={documentTypeByClient[client.id] || 'Outros'} onValueChange={(value) => setDocumentTypeByClient((current) => ({ ...current, [client.id]: (value || 'Outros') as DocumentType }))}><SelectTrigger className="document-type-select" aria-label="Tipo do documento"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="CPF">CPF</SelectItem><SelectItem value="RG">RG</SelectItem><SelectItem value="CNH">CNH</SelectItem><SelectItem value="Contrato">Contrato</SelectItem><SelectItem value="Outros">Outros</SelectItem></SelectContent></Select><label className="upload-button"><Paperclip /> {documentsLoading === client.id ? 'Enviando...' : 'Anexar documento'}<input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" disabled={documentsLoading === client.id} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; void uploadDocument(client.id, file); }} /></label></div></div>
+              {documentsLoading === client.id && !documents[client.id] ? <div className="documents-empty"><LoaderCircle className="spin" /> Carregando documentos</div> : (documents[client.id] || []).length === 0 ? <div className="documents-empty"><FileText /> Nenhum documento anexado</div> : <div className="documents-list">{documents[client.id].map((document) => <div className="document-row" key={document.id}><FileText /><div><strong>{document.name}</strong><span><b>{document.documentType}</b> · {(document.size / 1024 / 1024).toFixed(2)} MB</span></div><Button type="button" variant="ghost" size="sm" onClick={() => setPreviewDocument(document)}><Eye /> Visualizar</Button><a className="document-action" href={`/api/documentos?id=${encodeURIComponent(document.id)}&download=1`}><Download /> Baixar</a></div>)}</div>}
             </div>}
           </div>)}</div>}
         </section></main>}

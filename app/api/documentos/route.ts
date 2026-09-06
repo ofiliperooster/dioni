@@ -2,6 +2,7 @@ import { apiError, requireUser, supabaseRequest } from '@/lib/supabase-server';
 
 const BUCKET = 'dioni-documentos';
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const documentTypes = new Set(['CPF', 'RG', 'CNH', 'Contrato', 'Outros']);
 const allowedTypes = new Set([
   'application/pdf',
   'image/jpeg',
@@ -18,6 +19,7 @@ type DocumentRow = {
   caminho_storage: string;
   tipo_mime: string;
   tamanho: number;
+  tipo_documento: string;
   created_at: string;
 };
 
@@ -26,7 +28,7 @@ function validUuid(value: string) {
 }
 
 function serialize(row: DocumentRow) {
-  return { id: row.id, clientId: row.cliente_id, name: row.nome_original, mimeType: row.tipo_mime, size: row.tamanho, createdAt: row.created_at };
+  return { id: row.id, clientId: row.cliente_id, name: row.nome_original, documentType: row.tipo_documento, mimeType: row.tipo_mime, size: row.tamanho, createdAt: row.created_at };
 }
 
 async function findDocument(id: string) {
@@ -74,8 +76,11 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const clientIdValue = form.get('clienteId');
     const clientId = typeof clientIdValue === 'string' ? clientIdValue : '';
+    const documentTypeValue = form.get('documentType');
+    const documentType = typeof documentTypeValue === 'string' ? documentTypeValue : '';
     const file = form.get('file');
     if (!validUuid(clientId)) throw new Error('Cliente inválido.');
+    if (!documentTypes.has(documentType)) throw new Error('Selecione o tipo do documento.');
     if (!(file instanceof File) || file.size === 0) throw new Error('Selecione um documento.');
     if (file.size > MAX_FILE_SIZE) throw new Error('O arquivo deve ter no máximo 15 MB.');
     if (!allowedTypes.has(file.type)) throw new Error('Envie um arquivo PDF, imagem, DOC ou DOCX.');
@@ -95,7 +100,7 @@ export async function POST(request: Request) {
     const metadataResponse = await supabaseRequest('/rest/v1/dioni_documentos', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ cliente_id: clientId, nome_original: file.name, caminho_storage: storagePath, tipo_mime: file.type, tamanho: file.size }),
+      body: JSON.stringify({ cliente_id: clientId, nome_original: file.name, caminho_storage: storagePath, tipo_documento: documentType, tipo_mime: file.type, tamanho: file.size }),
     });
     const rows = await metadataResponse.json() as DocumentRow[];
     return Response.json({ document: serialize(rows[0]) }, { status: 201 });
