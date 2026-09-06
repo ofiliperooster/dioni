@@ -37,6 +37,11 @@ services:
         - traefik.http.routers.dioni.entrypoints=websecure
         - traefik.http.routers.dioni.tls=true
         - traefik.http.routers.dioni.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.dioni.middlewares=dioni-security
+        - traefik.http.middlewares.dioni-security.headers.stsSeconds=31536000
+        - traefik.http.middlewares.dioni-security.headers.stsIncludeSubdomains=true
+        - traefik.http.middlewares.dioni-security.headers.stsPreload=true
+        - traefik.http.middlewares.dioni-security.headers.contentSecurityPolicy=upgrade-insecure-requests
         - traefik.http.services.dioni.loadbalancer.server.port=3000
 
 networks:
